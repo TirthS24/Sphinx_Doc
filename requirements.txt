@@ -1,0 +1,11 @@
+# Sphinx Documentation Tool
+sphinx==7.1.2
+# Sphinx Read the Docs Theme
+sphinx-rtd-theme==3.0.2
+# Sphinx JavaScript Domain Support Extenstion
+sphinx-js==3.2.2
+# Sphinx GraphQL Domain Support Extension
+sphinx-graphiql==0.0.3
+# Requirements for GraphiQL documentation
+fett==0.4.0
+graphql-core==3.2.5
