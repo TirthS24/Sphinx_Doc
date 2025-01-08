@@ -23,6 +23,7 @@ sys.path.insert(0, os.path.abspath('../src'))
 extensions = [
     'sphinx.ext.viewcode',
     'sphinx.ext.autodoc',
+    'sphinx.ext.autosummary',
     'sphinx_js',
     'sphinx_graphiql'
 ]
@@ -30,7 +31,11 @@ extensions = [
 templates_path = ['_templates']
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 
-
+# -- Options for JS Documentation --------------------------------------------
+# Path for JS files
+js_source_path = '../src/js_modules'
+# Configuring Documentation style for JS files
+js_docstring_style = 'jsdoc'
 
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
