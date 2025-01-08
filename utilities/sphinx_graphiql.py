@@ -1,4 +1,6 @@
 import fett
+import boto3
+from requests_aws4auth import AWS4Auth
 from docutils import statemachine
 from docutils.utils.error_reporting import ErrorString
 from docutils.parsers.rst import Directive
@@ -9,28 +11,34 @@ class SphinxGraphiQL(Directive):
     required_arguments = 0
     optional_arguments = 0
     final_argument_whitespace = True
-    option_spec = {"query": str, "response": str, "endpoint": str, "view_only": str}
+    option_spec = {"query": str, "response": str, "endpoint": str, "view_only": str, "headers": str}
 
     GRAPHIQL_TEMPLATE = '''
-    .. raw:: html
+.. raw:: html
+
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/graphiql/2.0.9/graphiql.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react/17.0.2/umd/react.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/17.0.2/umd/react-dom.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/graphiql/2.0.9/graphiql.min.js"></script>
-    <div id="graphiql" style="height: 80vh; width:120vh;"></div>
+
+    <div id="graphiql" style="height: 80vh; width:120vh; padding-left: 1vh"></div>
+
     <script>
         const graphQLFetcher = (graphQLParams) => {
-        return fetch('{{ endpoint }}', {
-            method: 'POST',
-            headers: {
-            'Content-Type': 'application/json',
-            ...JSON.parse('{{ headers }}')
-            },
-            body: JSON.stringify(graphQLParams),
-        }).then(response => response.json());
+            console.log("Endpoint: {{ endpoint }}");
+            return fetch('{{ endpoint }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...JSON.parse('{{ headers }}')
+                },
+                body: JSON.stringify(graphQLParams),
+            }).then(response => response.json());
         };
         ReactDOM.render(
-        React.createElement(GraphiQL, { fetcher: graphQLFetcher }),
+        React.createElement(GraphiQL, { 
+            fetcher: graphQLFetcher,
+        }),
         document.getElementById('graphiql')
         );
     </script>
