@@ -1,26 +1,56 @@
 """
 python generate_graphql_rst.py \
     --env development \
-    --auth_type [API_KEY, IAM] \
+    --auth_type [API_KEY, IAM, COGNITO_USER_POOLS, OPENID_CONNECT] \
     --endpoint https://<api-id>.appsync-api.<region>.amazonaws.com/graphql \
     --region AWS_Region \
     --api_key API_Key \
-    --ak AWS_Access_Key \
-    --sk AWS_Secret_Key \
-    --st AWS_Secret_Token
+    --aws_access_key AWS_Access_Key \
+    --aws_secret_key AWS_Secret_Key \
+    --auth_token AWS_Authorization_Token \
+    --id_token OPENID_Authorization_Token
+    --user_pool_id Cognito_User_Pool_Id \
+    --client_id Cognito_Client_Id
 """
 
 import os
 import argparse
 from typing import Optional
 import boto3
-from datetime import datetime, timezone
-import hmac
-import hashlib
+from botocore.awsrequest import AWSRequest
+from botocore.auth import SigV4Auth
 import json
+import requests
 
-def sign(key, msg):
-    return hmac.new(key, msg.encode("utf-8"), hashlib.sha256).digest()
+
+class CognitoAuth(requests.auth.AuthBase):
+    def __init__(self, token):
+        self.token = token
+
+    def __call__(self, r):
+        r.headers['Authorization'] = f"Bearer {self.token}"
+        return r
+
+
+def get_cognito_id_token(cognito_client, username: str, password: str, client_id: str):
+    try:
+        response = cognito_client.initiate_auth(
+            ClientId=client_id,
+            AuthFlow='USER_PASSWORD_AUTH',
+            AuthParameters={
+                'USERNAME': username,
+                'PASSWORD': password
+            }
+        )
+        # Get the ID Token (JWT)
+        id_token = response['AuthenticationResult']['IdToken']
+        return id_token
+    except cognito_client.exceptions.NotAuthorizedException:
+        print("The username or password is incorrect.")
+        return None
+    except ValueError:
+        print("Credentials not found.")
+        return None
 
 
 def generate_headers(auth_type: str, region: str, endpoint: str, auth_details: dict):
@@ -49,7 +79,7 @@ def generate_headers(auth_type: str, region: str, endpoint: str, auth_details: d
             raise ValueError("API Key is required for API_KEY authentication.")
         headers["x-api-key"] = auth_details["api_key"]
 
-    elif auth_type == "COGNITO_USER_POOLS" or auth_type == "IAM":
+    elif auth_type == "IAM":
         
         if not auth_details.get("access_key") or not auth_details.get("secret_key"):
             credentials = boto3.Session().get_credentials()
@@ -66,59 +96,85 @@ def generate_headers(auth_type: str, region: str, endpoint: str, auth_details: d
             )
             credentials = session.get_credentials().get_frozen_credentials()
 
-        # sts_client = boto3.client(
-        #     "sts",
-        #     aws_access_key_id=auth_details["access_key"],
-        #     aws_secret_access_key=auth_details["secret_key"],
-        # )
-        # sts_credentials = sts_client.get_session_token(DurationSeconds=3000)
-        # print("Credentials: ", sts_credentials)
-        # headers["Authorization"] = sts_credentials["Credentials"]["SessionToken"]
 
-        # Generate SigV4 headers
-        method = "POST"
-        service = "appsync"
-        host = endpoint.split("://")[1]
-        canonical_uri = "/graphql"
-        canonical_querystring = ""
-        amz_date = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        date_stamp = datetime.now(timezone.utc).strftime("%Y%m%d")
-        
-        # Step 1: Create Canonical Request
-        payload = '{"query":"query MyQuery { listGammas(limit: 1) { items { UserVotes id friendlyId title rank } } }"}'
+        query = """
+        query fuzzySearchGammas ($title: String!, $organizationID: String!, $limit: Int, $nextToken: String) {
+            fuzzySearchGammas (title: $title, organizationID: $organizationID, limit: $limit, nextToken: $nextToken) {
+                nextToken
+                total
+            }
+        }
+        """ 
+        variables = {
+            "title": "right",
+            "organizationID": "0856184c-c3f8-43ec-8361-7f62ba6a6a51"
+        }
 
-        payload_hash = hashlib.sha256(payload.encode("utf-8")).hexdigest()
-        print("Computed Payload Hash: ", payload_hash)
-        canonical_headers = f"host:{host}\nx-amz-date:{amz_date}\n"
-        signed_headers = "host;x-amz-date"
-        canonical_request = (
-            f"{method}\n{canonical_uri}\n{canonical_querystring}\n"
-            f"{canonical_headers}\n{signed_headers}\n{payload_hash}"
+        body = json.dumps({
+            "query": query,
+            "variables": variables
+        })
+
+        aws_request = AWSRequest(
+            method="POST",
+            url=endpoint,
+            data=body,
+            headers=headers,
         )
-        
-        # Step 2: Create String to Sign
-        credential_scope = f"{date_stamp}/{region}/{service}/aws4_request"
-        string_to_sign = (
-            f"AWS4-HMAC-SHA256\n{amz_date}\n{credential_scope}\n"
-            f"{hashlib.sha256(canonical_request.encode('utf-8')).hexdigest()}"
+
+        # Sign the request
+        SigV4Auth(credentials, "appsync", region).add_auth(aws_request)
+
+        # Send the signed request
+        response = requests.request(
+            method="POST",
+            url=aws_request.url,
+            headers=dict(aws_request.headers),
+            data=body
         )
-        
-        # Step 3: Calculate Signature
-        k_secret = f"AWS4{auth_details['secret_key']}".encode("utf-8")
-        k_date = sign(k_secret, date_stamp)
-        k_region = sign(k_date, region)
-        k_service = sign(k_region, service)
-        k_signing = sign(k_service, "aws4_request")
-        signature = hmac.new(k_signing, string_to_sign.encode("utf-8"), hashlib.sha256).hexdigest()
-        
-        # Step 4: Add Signing Information to Headers
-        authorization_header = (
-            f"AWS4-HMAC-SHA256 Credential={auth_details['access_key']}/{credential_scope}, "
-            f"SignedHeaders={signed_headers}, Signature={signature}"
-        )
-        
-        headers["Authorization"] = authorization_header
-        headers["x-amz-date"] = amz_date
+        if response.status_code == 200:
+            print("Response: ", response.text)
+        headers.update(aws_request.headers)
+    
+    elif auth_type == "COGNITO_USER_POOLS":
+        if not auth_details["user_pool_id"] or not auth_details["client_id"]:
+            raise ValueError("UserPool ID and Client ID is not provided!")
+        username = str(input("Enter your Username: "))
+        password = str(input("Enter your Password: "))
+
+        cognito_client = boto3.client('cognito-idp', region_name=region)
+        id_token = get_cognito_id_token(cognito_client, username, password, auth_details["client_id"])
+        if id_token:
+            query = """
+            query fuzzySearchGammas ($title: String!, $organizationID: String!, $limit: Int, $nextToken: String) {
+                fuzzySearchGammas (title: $title, organizationID: $organizationID, limit: $limit, nextToken: $nextToken) {
+                    nextToken
+                    total
+                }
+            }
+            """ 
+            variables = {
+                "title": "right",
+                "organizationID": "0856184c-c3f8-43ec-8361-7f62ba6a6a51"
+            }
+
+            body = json.dumps({
+                "query": query,
+                "variables": variables
+            })
+
+            auth = CognitoAuth(id_token)
+
+            response = requests.post(
+                endpoint,
+                headers=headers,
+                data=body,
+                auth=auth
+            )
+
+            if response.status_code == 200:
+                print("Response: ", response.text)
+                headers.update({"Authorization": f"Bearer {id_token}"})
 
     elif auth_type == "OPENID_CONNECT":
         # OpenID Connect Authentication
@@ -141,6 +197,10 @@ def generate_graphql_rst(
     aws_secret_key: Optional[str] = None,
     auth_token: Optional[str] = None,
     id_token: Optional[str] = None,
+    user_pool_id: Optional[str] = None,
+    client_id: Optional[str] = None,
+    username: Optional[str] = None,
+    password: Optional[str] = None
 ) -> None:
     """
     Generates a graphql.rst file based on BUILD_ENV and authorization method.
@@ -159,6 +219,18 @@ def generate_graphql_rst(
     :type aws_secret_key: Optional[str] or None
     :param aws_secret_token: AWS Secret Token (required if auth_type is 'IAM').
     :type aws_secret_token: Optional[str] or None
+    :param auth_token: AWS Authorization Token (required if auth_type is 'IAM').
+    :type auth_token: Optional[str] or None
+    :param id_token: OpenID Connect Authorization Token (required if auth_type is 'OPENID_CONNECT').
+    :type id_token: Optional[str] or None
+    :param user_pool_id: Cognito User Pool ID (required if auth_type is 'COGNITO_USER_POOLS').
+    :type user_pool_id: Optional[str] or None
+    :param client_id: Cognito Client ID (required if auth_type is 'COGNITO_USER_POOLS').
+    :type client_id: Optional[str] or None
+    :param username: Username of the authorized user (required if auth_type is 'COGNITO_USER_POOLS').
+    :type username: Optional[str] or None
+    :param password: Password of the authorized user (required if auth_type is 'COGNITO_USER_POOLS').
+    :type password: Optional[str] or None
 
     :returns: N/A
     :rtype: None
@@ -174,7 +246,11 @@ def generate_graphql_rst(
         "id_token": id_token,
         "access_key": aws_access_key,
         "secret_key": aws_secret_key,
-        "auth_token": auth_token
+        "auth_token": auth_token,
+        "user_pool_id": user_pool_id,
+        "client_id": client_id,
+        "username": username,
+        "password": password
     }
     # Generate headers based on authorization type
     headers: dict = generate_headers(auth_type=auth_type, region=region, endpoint=endpoint, auth_details=auth_details)
@@ -246,6 +322,26 @@ def main() -> None:
         help="OPENID Authentication Token",
         type=str
     )
+    parser.add_argument(
+        "--user_pool_id",
+        help="Cognito User Pool ID",
+        type=str
+    )
+    parser.add_argument(
+        "--client_id",
+        help="Cognito Client ID",
+        type=str
+    )
+    parser.add_argument(
+        "--username",
+        help="Username of the authorized user",
+        type=str
+    )
+    parser.add_argument(
+        "--password",
+        help="Password of the authorized user",
+        type=str
+    )
 
     args: argparse.Namespace = parser.parse_args()
 
@@ -258,7 +354,11 @@ def main() -> None:
         aws_access_key=args.aws_access_key,
         aws_secret_key=args.aws_secret_key,
         auth_token=args.auth_token,
-        id_token=args.id_token
+        id_token=args.id_token,
+        user_pool_id=args.user_pool_id,
+        client_id=args.client_id,
+        username=args.username,
+        password=args.password
     )
 
 
