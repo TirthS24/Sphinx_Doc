@@ -1,6 +1,4 @@
 import fett
-import boto3
-from requests_aws4auth import AWS4Auth
 from docutils import statemachine
 from docutils.utils.error_reporting import ErrorString
 from docutils.parsers.rst import Directive

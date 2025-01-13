@@ -139,11 +139,11 @@ def generate_headers(auth_type: str, region: str, endpoint: str, auth_details: d
     elif auth_type == "COGNITO_USER_POOLS":
         if not auth_details["user_pool_id"] or not auth_details["client_id"]:
             raise ValueError("UserPool ID and Client ID is not provided!")
-        username = str(input("Enter your Username: "))
-        password = str(input("Enter your Password: "))
+        # username = str(input("Enter your Username: "))
+        # password = str(input("Enter your Password: "))
 
         cognito_client = boto3.client('cognito-idp', region_name=region)
-        id_token = get_cognito_id_token(cognito_client, username, password, auth_details["client_id"])
+        id_token = get_cognito_id_token(cognito_client, auth_details["username"], auth_details["password"], auth_details["client_id"])
         if id_token:
             query = """
             query fuzzySearchGammas ($title: String!, $organizationID: String!, $limit: Int, $nextToken: String) {
