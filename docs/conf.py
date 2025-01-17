@@ -25,7 +25,8 @@ extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.autosummary',
     'sphinx_js',
-    'sphinx_graphiql'
+    'sphinx_graphiql',
+    'sphinx_rapidoc'
 ]
 
 templates_path = ['_templates']
