@@ -1,0 +1,112 @@
+{
+    "openapi": "3.0.1",
+    "info": {
+        "title": "Comments API",
+        "description": "API for retrieving comments with configurable authentication",
+        "version": "1.0.0"
+    },
+    "servers": [
+        {
+            "url": "https://la952on1vc.execute-api.ap-northeast-3.amazonaws.com/{env}",
+            "variables": {
+                "env": {
+                    "default": "dev",
+                    "description": "API Gateway stage"
+                }
+            }
+        }
+    ],
+    "paths": {
+        "/comments": {
+            "get": {
+                "summary": "Get comments",
+                "description": "Retrieves comments",
+                "parameters": [
+                    {
+                        "name": "comment_id",
+                        "in": "query",
+                        "description": "ID of the comment to retrieve",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "Authorization",
+                        "in": "header",
+                        "description": "Authentication token for the request",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "Cache-Control",
+                        "in": "header",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful operation",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "comments": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/Comment"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "403": {
+                        "description": "Forbidden"
+                    },
+                    "404": {
+                        "description": "Comment not found"
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "Comment": {
+                "title": "Comment object",
+                "description": "Comment data from the Blog and Post application",
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "content": {
+                        "type": "string"
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "updatedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "__typename": {
+                        "type": "string"
+                    }
+                }
+            }
+        }
+    }
+}
