@@ -25,7 +25,7 @@ extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.autosummary',
     'sphinx_js',
-    'sphinx_graphiql',
+    'graphiql_sphinx',
     'sphinx_rapidoc'
 ]
 
