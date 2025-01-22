@@ -6,6 +6,8 @@ from botocore.auth import SigV4Auth
 from botocore.awsrequest import AWSRequest
 import json
 import base64
+from generate_graphql_rst import generate_gql_rst
+import subprocess
 
 app = FastAPI(title="AWS Auth Token Server")
 
@@ -27,6 +29,10 @@ class TokenRequest(BaseModel):
     # Target API details
     api_url: str
     method: str = "GET"
+    # GraphQL Endpoint
+    gql_endpoint: str
+    # REST API SPEC ENDPOINT
+    rest_spec_endpoint: str
     
 class TokenResponse(BaseModel):
     authorization_header: str
@@ -144,6 +150,15 @@ async def get_token(request: TokenRequest):
                 request.method,
                 request.region
             )
+
+            headers = {
+                "Authorization": auth_header
+            }
+
+            generate_gql_rst(request.gql_endpoint, headers)
+
+            output = subprocess.run(["sphinx-build", "-b", "html", "../docs", "../docs/_build", "-D", "master_doc=graphql"])
+            print(output)
             
             return TokenResponse(
                 authorization_header=auth_header,
@@ -165,6 +180,15 @@ async def get_token(request: TokenRequest):
                 request.client_id,
                 request.region
             )
+
+            headers = {
+                "Authorization": f"Bearer {token}"
+            }
+
+            generate_gql_rst(request.gql_endpoint, headers)
+
+            output = subprocess.run(["sphinx-build", "-b", "html", "../docs", "../docs/_build", "-D", "master_doc=graphql"])
+            print(output)
             
             return TokenResponse(
                 authorization_header=f"Bearer {token}",
@@ -177,6 +201,12 @@ async def get_token(request: TokenRequest):
                     status_code=400,
                     detail="api_key is required for API_KEY authentication"
                 )
+            
+            headers = {
+                "X-API-Key": request.api_key
+            }
+
+            generate_gql_rst(request.gql_endpoint, headers)
                 
             return TokenResponse(
                 authorization_header=request.api_key,
@@ -201,6 +231,12 @@ async def get_token(request: TokenRequest):
                 request.lambda_payload,
                 request.region,
                 credentials
+            )
+
+            generate_gql_rst(request.gql_endpoint, 
+                {
+                    "Authorization": headers.get('Authorization')
+                }           
             )
             
             return TokenResponse(

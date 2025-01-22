@@ -186,6 +186,20 @@ def generate_headers(auth_type: str, region: str, endpoint: str, auth_details: d
 
     return headers
 
+def generate_gql_rst(endpoint: str, headers: dict) -> None:
+    file_path: str = "../docs/graphql.rst"
+
+    with open(file_path, "w") as file:
+        file.write("GraphQL API Documentation\n")
+        file.write("==========================\n\n")
+
+        # Write environment-specific content
+        file.write(".. graphiql::\n")
+        file.write(f"    :endpoint: {endpoint}\n")
+        file.write(f"    :headers: {json.dumps(headers)}\n")
+
+    print(f"`graphql.rst` file generated successfully at {file_path}.")    
+
 
 def generate_graphql_rst(
     build_env: str,
