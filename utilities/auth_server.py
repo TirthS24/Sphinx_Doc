@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, Literal, Dict, Any
 import boto3
@@ -6,10 +7,18 @@ from botocore.auth import SigV4Auth
 from botocore.awsrequest import AWSRequest
 import json
 import base64
-from generate_graphql_rst import generate_gql_rst
 import subprocess
 
 app = FastAPI(title="AWS Auth Token Server")
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 class TokenRequest(BaseModel):
     auth_type: Literal["IAM", "COGNITO", "API_KEY", "LAMBDA"]
@@ -20,24 +29,95 @@ class TokenRequest(BaseModel):
     password: Optional[str] = None
     api_key: Optional[str] = None
     # Cognito specific fields
-    user_pool_id: Optional[str] = None
     client_id: Optional[str] = None
     region: Optional[str] = None
     # Lambda specific fields
     lambda_payload: Optional[Dict[str, Any]] = None
     lambda_function_name: Optional[str] = None
     # Target API details
-    api_url: str
-    method: str = "GET"
+    api_url: Optional[str] = None
+    method: str = "POST"
     # GraphQL Endpoint
     gql_endpoint: str
-    # REST API SPEC ENDPOINT
-    rest_spec_endpoint: str
+    # REST API Specs Endpoint
+    spec_endpoint: str
     
+
 class TokenResponse(BaseModel):
     authorization_header: str
     token_type: str
     additional_headers: Optional[Dict[str, str]] = None
+
+
+def generate_rst_files(gql_endpoint: str, spec_endpoint: str, headers: dict) -> None:
+
+    # Generating graphql.rst file
+    file_path: str = "../docs/graphql.rst"
+
+    with open(file_path, "w") as file:
+        file.write("GraphQL API Documentation\n")
+        file.write("==========================\n\n")
+
+        # Write Auth Header for Information
+        file.write(".. code-block:: json\n\n")
+        file.write(f"   {json.dumps(headers)}\n\n")
+
+        # Write environment-specific content
+        file.write(".. graphiql::\n")
+        file.write(f"   :endpoint: {gql_endpoint}\n")
+        file.write(f"   :headers: {json.dumps(headers)}\n")
+
+    print(f"`graphql.rst` file generated successfully at {file_path}.")  
+
+    # Generating apidoc.rst file
+    file_path = "../docs/apidoc.rst"
+
+    with open(file_path, "w") as file:
+        file.write("REST API Documentation\n")
+        file.write("======================\n\n")
+
+        # Write Auth Header for Information
+        file.write(".. code-block:: json\n\n")
+        file.write(f"   {json.dumps(headers)}\n\n")
+
+        # Write environment-specific content
+        file.write(".. rapidoc::\n")
+        file.write(f"   :spec-url: {spec_endpoint}\n")
+        file.write("   :theme: light\n   :render-style: view\n")
+    
+    print(f"`apidoc.rst` file generated successfully at {file_path}.")
+
+    # Including API docs in index file
+    file_path = "../docs/index.rst"
+    with open(file_path, "w") as file:
+        file.write("Auto API Documentation\n")
+        file.write("======================\n\n")
+
+        file.write(".. toctree::\n")
+        file.write("   :maxdepth: 2\n   :caption: Contents:\n\n")
+        file.write("   auth\n   apidoc\n   graphql\n")
+    
+    print(f"`index.rst` file updated successfully at {file_path}.")
+
+
+def create_graphql_rst(request, auth_header):
+    """Creates graphql.rst file with proper authorization headers"""
+    headers = {}
+    if request.auth_type.lower() == 'api_key':
+        headers.update({
+            "x-api-key": auth_header
+        })
+    else:
+        headers.update({
+            "Authorization": auth_header
+        })
+
+    generate_rst_files(request.gql_endpoint, request.spec_endpoint, headers)
+
+    subprocess.run(["rm", "-rf", "../docs/_build"])
+    output = subprocess.run(["sphinx-build", "-b", "html", "../docs", "../docs/_build"])
+    print(output)
+
 
 def generate_sigv4_auth_header(credentials, url, method, region, service='execute-api'):
     """Generate AWS SigV4 signature for API Gateway"""
@@ -52,8 +132,8 @@ def generate_sigv4_auth_header(credentials, url, method, region, service='execut
     
     return request.headers['Authorization']
 
-def get_cognito_token(username: str, password: str, user_pool_id: str, 
-                     client_id: str, region: str) -> str:
+
+def get_cognito_token(username: str, password: str, client_id: str, region: str) -> str:
     """Get Cognito authentication token using user credentials"""
     client = boto3.client('cognito-idp', region_name=region)
     
@@ -70,6 +150,7 @@ def get_cognito_token(username: str, password: str, user_pool_id: str,
         return response['AuthenticationResult']['IdToken']
     except Exception as e:
         raise HTTPException(status_code=401, detail=str(e))
+
 
 def get_lambda_token(lambda_function_name: str, payload: Dict[str, Any], 
                     region: str, credentials) -> Dict[str, str]:
@@ -128,6 +209,7 @@ def get_lambda_token(lambda_function_name: str, payload: Dict[str, Any],
             detail=f"Lambda authorization failed: {str(e)}"
         )
 
+
 @app.post("/getToken", response_model=TokenResponse)
 async def get_token(request: TokenRequest):
     try:
@@ -151,14 +233,7 @@ async def get_token(request: TokenRequest):
                 request.region
             )
 
-            headers = {
-                "Authorization": auth_header
-            }
-
-            generate_gql_rst(request.gql_endpoint, headers)
-
-            output = subprocess.run(["sphinx-build", "-b", "html", "../docs", "../docs/_build", "-D", "master_doc=graphql"])
-            print(output)
+            create_graphql_rst(request, auth_header)
             
             return TokenResponse(
                 authorization_header=auth_header,
@@ -166,29 +241,20 @@ async def get_token(request: TokenRequest):
             )
             
         elif request.auth_type == "COGNITO":
-            if not all([request.username, request.password, request.user_pool_id, 
-                       request.client_id, request.region]):
+            if not all([request.username, request.password, request.client_id, request.region]):
                 raise HTTPException(
                     status_code=400,
-                    detail="username, password, user_pool_id, client_id, and region are required for Cognito authentication"
+                    detail="username, password, client_id, and region are required for Cognito authentication"
                 )
             
             token = get_cognito_token(
                 request.username,
                 request.password,
-                request.user_pool_id,
                 request.client_id,
                 request.region
             )
 
-            headers = {
-                "Authorization": f"Bearer {token}"
-            }
-
-            generate_gql_rst(request.gql_endpoint, headers)
-
-            output = subprocess.run(["sphinx-build", "-b", "html", "../docs", "../docs/_build", "-D", "master_doc=graphql"])
-            print(output)
+            create_graphql_rst(request, f"Bearer {token}")
             
             return TokenResponse(
                 authorization_header=f"Bearer {token}",
@@ -202,11 +268,7 @@ async def get_token(request: TokenRequest):
                     detail="api_key is required for API_KEY authentication"
                 )
             
-            headers = {
-                "X-API-Key": request.api_key
-            }
-
-            generate_gql_rst(request.gql_endpoint, headers)
+            create_graphql_rst(request, request.api_key)
                 
             return TokenResponse(
                 authorization_header=request.api_key,
@@ -233,11 +295,7 @@ async def get_token(request: TokenRequest):
                 credentials
             )
 
-            generate_gql_rst(request.gql_endpoint, 
-                {
-                    "Authorization": headers.get('Authorization')
-                }           
-            )
+            create_graphql_rst(request, headers.get('Authorization'))
             
             return TokenResponse(
                 authorization_header=headers.pop('Authorization'),
@@ -253,6 +311,7 @@ async def get_token(request: TokenRequest):
             
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 if __name__ == "__main__":
     import uvicorn
