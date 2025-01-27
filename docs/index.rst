@@ -5,6 +5,5 @@ Auto API Documentation
    :maxdepth: 2
    :caption: Contents:
 
-   auth
    apidoc
    graphql
