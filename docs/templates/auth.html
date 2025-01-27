@@ -38,7 +38,7 @@
             box-sizing: border-box;
         }
         button {
-            background-color: #0056b3;
+            background-color: #2980b9;
             color: white;
             padding: 10px 15px;
             border: none;
@@ -47,7 +47,7 @@
             width: 100%;
         }
         button:hover {
-            background-color: #003d82;
+            background-color: #2980b9;
         }
         .error {
             background-color: #ffebee;
@@ -75,16 +75,16 @@
 
     <script type="text/babel">
         const AuthTokenForm = () => {
-            const [authType, setAuthType] = React.useState('IAM');
+            const [authType, setAuthType] = React.useState('COGNITO');
             const [formData, setFormData] = React.useState({});
             const [response, setResponse] = React.useState(null);
             const [error, setError] = React.useState(null);
 
             const authFields = {
-                IAM: ['access_key', 'secret_key', 'region', 'api_url', 'method'],
+               
                 COGNITO: ['username', 'password', 'client_id', 'region'],
                 API_KEY: ['api_key'],
-                LAMBDA: ['lambda_function_name', 'lambda_payload', 'region', 'access_key', 'secret_key']
+               
             };
 
             const handleInputChange = (e) => {
@@ -103,7 +103,7 @@
                     const payload = {
                         auth_type: authType,
                         ...formData,
-                        lambda_payload: authType === 'LAMBDA' ? {} : undefined
+                        
                     };
 
                     console.log(payload)
@@ -162,33 +162,7 @@
                                     required
                                 />
                             </div>
-                        ))}
-
-                        <div key='spec_endpoint' className='form-group'>
-                            <label>
-                                REST API Specification File URL
-                            </label>
-                            <input 
-                                type='text'
-                                name='spec_endpoint'
-                                required
-                                onChange={handleInputChange}
-                                >
-                            </input>
-                        </div>
-                        
-                        <div key='gql_endpoint' className='form-group'>
-                            <label>
-                                GraphQL Endoint URL
-                            </label>
-                            <input 
-                                type='text'
-                                name='gql_endpoint'
-                                required
-                                onChange={handleInputChange}
-                                >
-                            </input>
-                        </div>
+                        ))}  
 
                         <button type="submit">Get Token</button>
                     </form>
