@@ -7,7 +7,6 @@ from botocore.auth import SigV4Auth
 from botocore.awsrequest import AWSRequest
 import json
 import base64
-import subprocess
 
 app = FastAPI(title="AWS Auth Token Server")
 
@@ -47,76 +46,6 @@ class TokenResponse(BaseModel):
     authorization_header: str
     token_type: str
     additional_headers: Optional[Dict[str, str]] = None
-
-
-def generate_rst_files(gql_endpoint: str, spec_endpoint: str, headers: dict) -> None:
-
-    # Generating graphql.rst file
-    file_path: str = "../docs/graphql.rst"
-
-    with open(file_path, "w") as file:
-        file.write("GraphQL API Documentation\n")
-        file.write("==========================\n\n")
-
-        # Write Auth Header for Information
-        file.write(".. code-block:: json\n\n")
-        file.write(f"   {json.dumps(headers)}\n\n")
-
-        # Write environment-specific content
-        file.write(".. graphiql::\n")
-        file.write(f"   :endpoint: {gql_endpoint}\n")
-        file.write(f"   :headers: {json.dumps(headers)}\n")
-
-    print(f"`graphql.rst` file generated successfully at {file_path}.")  
-
-    # Generating apidoc.rst file
-    file_path = "../docs/apidoc.rst"
-
-    with open(file_path, "w") as file:
-        file.write("REST API Documentation\n")
-        file.write("======================\n\n")
-
-        # Write Auth Header for Information
-        file.write(".. code-block:: json\n\n")
-        file.write(f"   {json.dumps(headers)}\n\n")
-
-        # Write environment-specific content
-        file.write(".. rapidoc::\n")
-        file.write(f"   :spec-url: {spec_endpoint}\n")
-        file.write("   :theme: light\n   :render-style: view\n")
-    
-    print(f"`apidoc.rst` file generated successfully at {file_path}.")
-
-    # Including API docs in index file
-    file_path = "../docs/index.rst"
-    with open(file_path, "w") as file:
-        file.write("Auto API Documentation\n")
-        file.write("======================\n\n")
-
-        file.write(".. toctree::\n")
-        file.write("   :maxdepth: 2\n   :caption: Contents:\n\n")
-        file.write("   auth\n   apidoc\n   graphql\n")
-    
-    print(f"`index.rst` file updated successfully at {file_path}.")
-
-
-def create_graphql_rst(request, auth_header):
-    """Creates graphql.rst file with proper authorization headers"""
-    headers = {}
-    if request.auth_type.lower() == 'api_key':
-        headers.update({
-            "x-api-key": auth_header
-        })
-    else:
-        headers.update({
-            "Authorization": auth_header
-        })
-
-    generate_rst_files(request.gql_endpoint, request.spec_endpoint, headers)
-
-    subprocess.run(["rm", "-rf", "../docs/_build"])
-    output = subprocess.run(["sphinx-build", "-b", "html", "../docs", "../docs/_build"])
-    print(output)
 
 
 def generate_sigv4_auth_header(credentials, url, method, region, service='execute-api'):
@@ -232,8 +161,6 @@ async def get_token(request: TokenRequest):
                 request.method,
                 request.region
             )
-
-            create_graphql_rst(request, auth_header)
             
             return TokenResponse(
                 authorization_header=auth_header,
@@ -253,8 +180,6 @@ async def get_token(request: TokenRequest):
                 request.client_id,
                 request.region
             )
-
-            create_graphql_rst(request, f"Bearer {token}")
             
             return TokenResponse(
                 authorization_header=f"Bearer {token}",
@@ -267,9 +192,7 @@ async def get_token(request: TokenRequest):
                     status_code=400,
                     detail="api_key is required for API_KEY authentication"
                 )
-            
-            create_graphql_rst(request, request.api_key)
-                
+                            
             return TokenResponse(
                 authorization_header=request.api_key,
                 token_type="API_KEY"
@@ -294,8 +217,6 @@ async def get_token(request: TokenRequest):
                 request.region,
                 credentials
             )
-
-            create_graphql_rst(request, headers.get('Authorization'))
             
             return TokenResponse(
                 authorization_header=headers.pop('Authorization'),
