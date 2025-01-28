@@ -40,6 +40,7 @@ Following are the steps to set-up this Repository in local system.
 
 ```bash
 git clone https://github.com/TirthS24/Sphinx_Doc
+cd Sphinx_Doc
 ```
 
 1. Install Python in your system if not.
@@ -213,4 +214,3 @@ We are aiming to extend support for following:
 
 - Python version 3.9 and above is required to install add dependencies.
 - Remember to turn on the `auth_server.py` Server to obtain Authentication token, else it will result in error.
-- 
