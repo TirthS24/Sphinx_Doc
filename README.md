@@ -43,14 +43,14 @@ git clone https://github.com/TirthS24/Sphinx_Doc
 cd Sphinx_Doc
 ```
 
-1. Install Python in your system if not.
-2. Create a virtual environment by running the following command:
+2. Install Python in your system if not.
+3. Create a virtual environment by running the following command:
 
 ```bash
 python -m venv .venv
 ```
 
-3. Enable the virtual environment by running following command:
+4. Enable the virtual environment by running following command:
 
 ```bash
 # For Mac/Linux
@@ -60,13 +60,13 @@ source .venv/bin/activate
 .\.venv\Scripts\activate     
 ```
 
-4. Install the requirements specified in requirements.txt file by running the following command:
+5. Install the requirements specified in requirements.txt file by running the following command:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-5. Run the following command to build static web application on API Documentation using Sphinx:
+6. Run the following command to build static web application on API Documentation using Sphinx:
 
 ```bash
 sphinx-build -b html <path_to_docs_folder> <path_to_docs/_build_folder>
@@ -74,14 +74,14 @@ sphinx-build -b html <path_to_docs_folder> <path_to_docs/_build_folder>
 
 > Note: `<path_to_docs_folder>` `<path_to_docs/_build_folder>` and denotes the path of docs folder and path of docs/_build folder respectively relative to where you are running the command in terminal.
 > 
-6. Run a [localhost](http://localhost) server (using extensions like Live Server in VSCode) and open the index.html file created in docs/_build/index.html
-7. In case you need to modify any of the following files:
+7. Run a [localhost](http://localhost) server (using extensions like Live Server in VSCode) and open the index.html file created in docs/_build/index.html
+8. In case you need to modify any of the following files:
 - any .rst files
 - any files under template directory
 - change in [config.py](http://config.py) file
 You need to perform following steps:
 - Delete the existing /docs/_build folder
-- Re run the command in step 5.
+- Re run the command in step 6.
 
 ---
 
