@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Auth Token Generator</title>
+    <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+    <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+    <style>
+        /* Existing styles remain unchanged */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+        select, input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #2980b9;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            width: 100%;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        .error {
+            background-color: #ffebee;
+            color: #c62828;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .response {
+            background-color: #f5f5f5;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 20px;
+            overflow-x: auto;
+        }
+        pre {
+            margin: 0;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        // Token management functionality
+        const TokenManager = {
+            setToken: (token) => {
+                sessionStorage.setItem('graphql_token', token);
+                // Dispatch an event to notify token changes
+                window.dispatchEvent(new Event('tokenUpdated'));
+            },
+            getToken: () => {
+                return sessionStorage.getItem('graphql_token');
+            },
+            removeToken: () => {
+                sessionStorage.removeItem('graphql_token');
+                window.dispatchEvent(new Event('tokenUpdated'));
+            }
+        };
+
+        // Global function for GraphiQL to access the token
+        window.getAuthenticationToken = async function() {
+            const token = TokenManager.getToken();
+            if (!token) {
+                throw new Error('No authentication token available');
+            }
+            return token;
+        };
+
+        const AuthTokenForm = () => {
+            const [authType, setAuthType] = React.useState('COGNITO');
+            const [formData, setFormData] = React.useState({});
+            const [response, setResponse] = React.useState(null);
+            const [error, setError] = React.useState(null);
+
+            const authFields = {
+                COGNITO: ['username', 'password', 'client_id', 'region'],
+                API_KEY: ['api_key']
+            };
+
+            React.useEffect(() => {
+                // Check for existing token on component mount
+                const existingToken = TokenManager.getToken();
+                if (existingToken) {
+                    setResponse({ token: existingToken });
+                }
+            }, []);
+
+            const handleInputChange = (e) => {
+                setFormData({
+                    ...formData,
+                    [e.target.name]: e.target.value
+                });
+            };
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                setError(null);
+                setResponse(null);
+
+                try {
+                    const payload = {
+                        auth_type: authType,
+                        ...formData
+                    };
+
+                    const response = await fetch('http://localhost:8000/getToken', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify(payload),
+                    });
+
+                    const data = await response.json();
+                    
+                    if (!response.ok) {
+                        throw new Error(data.detail || 'Failed to get token');
+                    }
+
+                    // Store the token
+                    TokenManager.setToken(data.authorization_header);
+                    setResponse(data);
+                } catch (err) {
+                    setError(err.message);
+                    TokenManager.removeToken();
+                }
+            };
+
+            const handleLogout = () => {
+                TokenManager.removeToken();
+                setResponse(null);
+                setFormData({});
+            };
+
+            return (
+                <div className="container">
+                    <h1>Get Authorization Token</h1>
+                    {!response ? (
+                        <form onSubmit={handleSubmit}>
+                            <div className="form-group">
+                                <label>Authentication Type</label>
+                                <select 
+                                    value={authType}
+                                    onChange={(e) => {
+                                        setAuthType(e.target.value);
+                                        setFormData({});
+                                    }}
+                                >
+                                    {Object.keys(authFields).map(type => (
+                                        <option key={type} value={type}>{type}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {authFields[authType].map(field => (
+                                <div key={field} className="form-group">
+                                    <label>
+                                        {field.split('_').map(word => 
+                                            word.charAt(0).toUpperCase() + word.slice(1)
+                                        ).join(' ')}
+                                    </label>
+                                    <input
+                                        type={field.includes('password') ? 'password' : 'text'}
+                                        name={field}
+                                        value={formData[field] || ''}
+                                        onChange={handleInputChange}
+                                        required
+                                    />
+                                </div>
+                            ))}  
+
+                            <button type="submit">Get Token</button>
+                        </form>
+                    ) : (
+                        <div>
+                            <div className="response">
+                                <h3>Authentication Status: Active</h3>
+                                <p>You can now use the GraphiQL explorer below.</p>
+                            </div>
+                            <button onClick={handleLogout} style={{marginTop: '15px'}}>
+                                Logout
+                            </button>
+                        </div>
+                    )}
+
+                    {error && (
+                        <div className="error">
+                            {error}
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<AuthTokenForm />);
+    </script>
+</body>
+</html>
