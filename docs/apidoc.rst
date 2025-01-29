@@ -2,7 +2,7 @@ REST API Documentation
 ======================
 
 .. raw:: html
-   :file: templates/auth.html
+   :file: templates/rest-auth.html
 
 
 .. rapidoc::

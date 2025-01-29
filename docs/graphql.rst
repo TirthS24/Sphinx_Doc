@@ -2,7 +2,7 @@ GraphQL API Documentation
 ==========================
 
 .. raw:: html
-   :file: templates/auth.html
+   :file: templates/gql-auth.html
 
 
 .. graphiql::
