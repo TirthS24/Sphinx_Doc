@@ -37,6 +37,79 @@ class EndpointInfo:
     content_types: List[str]
     security: List[Dict[str, Any]]
 
+class ParameterParser:
+    """Parser for extracting and categorizing endpoint parameters."""
+    
+    @staticmethod
+    def parse_path_parameters(path: str) -> List[Dict[str, Any]]:
+        """
+        Extract path parameters from a URL path.
+        
+        Args:
+            path: URL path string (e.g., "/users/{user_id}/posts/{post_id}")
+            
+        Returns:
+            List of parameter dictionaries
+        """
+        path_params = []
+        # Match both {param} and <param> formats
+        param_pattern = r'[{<]([^}>]+)[}>]'
+        
+        for match in re.finditer(param_pattern, path):
+            param_name = match.group(1)
+            param_dict = {
+                "name": param_name,
+                "in": "path",
+                "required": True,  # Path parameters are always required
+                "schema": {
+                    "type": "string"  # Default to string, can be overridden by docstring
+                },
+                "description": f"Path parameter: {param_name}"
+            }
+            path_params.append(param_dict)
+            
+        return path_params
+
+    @staticmethod
+    def _map_type(param_type: str) -> str:
+        """Map Python/TypeScript types to OpenAPI types."""
+        type_mapping = {
+            "str": "string",
+            "string": "string",
+            "int": "integer",
+            "float": "number",
+            "bool": "boolean",
+            "list": "array",
+            "dict": "object",
+            "any": "string"
+        }
+        return type_mapping.get(param_type.lower(), "string")
+
+    @staticmethod
+    def enhance_parameters(endpoint_info: EndpointInfo) -> EndpointInfo:
+        """
+        Enhance endpoint parameters by detecting path and query parameters.
+        
+        Args:
+            endpoint_info: Original endpoint information
+            
+        Returns:
+            Enhanced endpoint information
+        """
+        # Extract path parameters
+        path_params = ParameterParser.parse_path_parameters(endpoint_info.path)
+        
+        # Merge parameters, prioritizing docstring-defined parameters
+        existing_names = {param["name"] for param in endpoint_info.parameters}
+        
+        # Add path parameters if not already defined
+        for param in path_params:
+            if param["name"] not in existing_names:
+                endpoint_info.parameters.append(param)
+                existing_names.add(param["name"])
+        
+        return endpoint_info
+
 class DocstringParser:
     """Parser for extracting endpoint information from docstrings."""
     
@@ -107,9 +180,9 @@ class DocstringParser:
                     param_name, param_desc = param_line.split(':', 1)
                     param = {
                         "name": param_name.strip(),
-                        "in": "query",  # default to query, can be overridden
+                        "in": "query",  # default to query parameter
                         "description": param_desc.strip(),
-                        "required": True,  # default to required
+                        "required": False, # Query parameters are optional by default
                         "schema": {"type": "string"}  # default to string
                     }
                     info['parameters'].append(param)
@@ -161,7 +234,10 @@ class DocstringParser:
             if not info['methods']:
                 info['methods'] = ['GET']
             
-            return EndpointInfo(**info)
+            endpoint_info = EndpointInfo(**info)
+
+            # Enhance parameters after creating EndpointInfo
+            return ParameterParser.enhance_parameters(endpoint_info)
         
         return None
 
