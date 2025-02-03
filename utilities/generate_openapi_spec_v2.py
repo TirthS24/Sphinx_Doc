@@ -699,7 +699,7 @@ def main() -> None:
     # Validate file paths
     for path in file_paths:
         if not os.path.isfile(path):
-            print(f"Error: File not found - {path}")
+            print(f"Error: File not found - {path}\nEnter valid paths relative to root directory!")
             sys.exit(1)
     
     generator = OpenAPISpecGenerator(file_paths)

@@ -1,7 +1,9 @@
+--auth: api_key
 post/index.py
 post/post_mods.py
 post/analytics.py
 
+--auth: cognito
 comment/index.py
 comment/comment_mods.py
 comment/analytics.py
