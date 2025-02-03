@@ -1,0 +1,44 @@
+name: Build Documentation
+
+on:
+  push:
+    branches:
+      - main
+      - stage
+      - dev
+
+jobs:
+  build-docs:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+          
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          
+      - name: Remove existing build directory if exists
+        run: |
+          if [ -d "docs/_build" ]; then
+            rm -rf docs/_build
+          fi
+          
+      - name: Build Sphinx documentation
+        run: |
+          sphinx-build -b html docs/ docs/_build
+          
+      - name: Commit changes
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add docs/_build/
+          git commit -m "Update documentation build" || echo "No changes to commit"
+          git push
