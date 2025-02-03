@@ -3,7 +3,7 @@ import ast
 import re
 import json
 from typing import Dict, List, Optional, Any, Type
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import os
 import logging
 from datetime import datetime
@@ -36,6 +36,17 @@ class EndpointInfo:
     response_schema: Dict[str, Any]
     content_types: List[str]
     security: List[Dict[str, Any]]
+    _errors: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+
+    @property
+    def errors(self) -> Dict[str, Dict[str, Any]]:
+        """Getter for errors property."""
+        return self._errors
+
+    @errors.setter
+    def errors(self, value: Dict[str, Dict[str, Any]]):
+        """Setter for errors property."""
+        self._errors = value
 
 class ParameterParser:
     """Parser for extracting and categorizing endpoint parameters."""
@@ -137,7 +148,8 @@ class DocstringParser:
             "request_schema": {"type": "object", "properties": {}},
             "response_schema": {"type": "object", "properties": {}},
             "content_types": ["application/json"],
-            "security": []
+            "security": [],
+            "_errors": {}
         }
         
         # Split docstring into lines and clean
@@ -167,6 +179,9 @@ class DocstringParser:
                 continue
             elif line.lower() == 'response:':
                 current_section = 'response'
+                continue
+            elif line.lower() == 'errors:' or line.lower() == 'error:':
+                current_section = 'error'
                 continue
             elif line.lower() == 'security:':
                 current_section = 'security'
@@ -217,6 +232,15 @@ class DocstringParser:
                         except json.JSONDecodeError:
                             pass
                         response_json_started = False
+
+            # Handle error responses
+            elif current_section == 'error' and line.startswith('-'):
+                error_line = line[1:].strip()
+                if ':' in error_line:
+                    error_code, error_desc = error_line.split(':', 1)
+                    info['_errors'][error_code.strip()] = {
+                        "description": error_desc.strip(),
+                    }
             
             # Handle security requirements
             elif current_section == 'security' and line.startswith('-'):
@@ -588,9 +612,9 @@ class TypeScriptExpressDetector(EndpointDetectorStrategy):
 class OpenAPISpecGenerator:
     """Main class for generating OpenAPI specifications from various sources."""
     
-    def __init__(self, file_paths: List[str]):
+    def __init__(self, auth_files: List[str]):
         """Initialize with file paths."""
-        self.file_paths = file_paths
+        self.auth_files = auth_files
         self.strategies: Dict[str, Type[EndpointDetectorStrategy]] = {
             ".py": {
                 "flask": PythonFlaskDetector,
@@ -610,38 +634,62 @@ class OpenAPISpecGenerator:
                 "title": "API Specification",
                 "version": "1.0.0"
             },
-            "paths": {}
+            "paths": {},
+            "components": {
+                "securitySchemes": {
+                    "ApiKeyAuth": {
+                        "type": "apiKey",
+                        "in": "header",
+                        "name": "X-API-Key"
+                    },
+                    "CognitoAuth": {
+                        "type": "http",
+                        "scheme": "bearer",
+                        "bearerFormat": "JWT"
+                    }
+                }
+            }
         }
         
-        for file_path in self.file_paths:
-            detector, content = self._detect_language_and_framework(file_path)
-            if detector:
-                endpoints = detector.detect_endpoints(content)
-                
-                for endpoint in endpoints:
-                    if endpoint.path not in spec["paths"]:
-                        spec["paths"][endpoint.path] = {}
+        for auth_type, file_paths in self.auth_files.items():
+            for file_path in file_paths:
+                detector, content = self._detect_language_and_framework(file_path)
+                if detector:
+                    endpoints = detector.detect_endpoints(content)
                     
-                    for method in endpoint.methods:
-                        operation = {
-                            "summary": endpoint.summary,
-                            "description": endpoint.description,
-                            "parameters": endpoint.parameters,
-                            "responses": {
-                                "200": {
-                                    "description": "Successful response",
-                                    "content": {
-                                        ct: {"schema": endpoint.response_schema}
-                                        for ct in endpoint.content_types
+                    for endpoint in endpoints:
+                        endpoint.auth_type = auth_type
+                        if endpoint.path not in spec["paths"]:
+                            spec["paths"][endpoint.path] = {}
+                        
+                        for method in endpoint.methods:
+                            operation = {
+                                "summary": endpoint.summary,
+                                "description": endpoint.description,
+                                "parameters": endpoint.parameters,
+                                "responses": {
+                                    "200": {
+                                        "description": "Successful response",
+                                        "content": {
+                                            ct: {"schema": endpoint.response_schema}
+                                            for ct in endpoint.content_types
+                                        }
                                     }
                                 }
                             }
-                        }
-                        
-                        if endpoint.security:
-                            operation["security"] = endpoint.security
-                        
-                        spec["paths"][endpoint.path][method.lower()] = operation
+
+                            # Add error responses directly to the responses object
+                            if hasattr(endpoint, 'errors'):
+                                for error_code, error_content in endpoint.errors.items():
+                                    operation["responses"][error_code] = error_content
+                            
+                             # Add security requirement based on auth type
+                            if auth_type == "api_key":
+                                operation["security"] = [{"ApiKeyAuth": []}]
+                            elif auth_type == "cognito":
+                                operation["security"] = [{"CognitoAuth": []}]
+                            
+                            spec["paths"][endpoint.path][method.lower()] = operation
         
         return spec
     
@@ -683,26 +731,51 @@ class OpenAPISpecGenerator:
             json.dump(spec, spec_file, indent=2)
         print(f"OpenAPI specification saved to {output_path}")
 
+def parse_input_file(input_file: str) -> Dict[str, List[str]]:
+    """
+    Parse the input file to get auth type and associated files.
+    
+    Args:
+        input_file: Path to input file
+        
+    Returns:
+        Dictionary mapping auth types to list of files
+    """
+    auth_files = {}
+    current_auth = None
+    
+    with open(input_file, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+                
+            if line.startswith('--auth:'):
+                current_auth = line.split(':', 1)[1].strip()
+                auth_files[current_auth] = []
+            elif current_auth:
+                auth_files[current_auth].append(line)
+    
+    return auth_files
+
 def main() -> None:
     """Main entry point for the script."""
     # if len(sys.argv) < 2:
     #     logger.error("Usage: python smart_openapi_generator.py <source_file1> [<source_file2> ...]")
     #     sys.exit(1)
     
-    # Collect all lambda file paths from command-line arguments
-    file_paths = []
-    with open("input_script_spec.txt", "r") as file:
-        for path in file:
-            if path and path != "":
-                file_paths.append(path.strip())
+    input_file = "input_script_spec.txt"
+    # Parse input file to get auth types and associated files
+    auth_files = parse_input_file(input_file)
     
-    # Validate file paths
-    for path in file_paths:
-        if not os.path.isfile(path):
-            print(f"Error: File not found - {path}\nEnter valid paths relative to root directory!")
-            sys.exit(1)
+    # Validate all file paths
+    for files in auth_files.values():
+        for path in files:
+            if not os.path.isfile(path):
+                logger.error(f"Error: File not found - {path}")
+                sys.exit(1)
     
-    generator = OpenAPISpecGenerator(file_paths)
+    generator = OpenAPISpecGenerator(auth_files)
     generator.save_specification("../src/openapi_spec.json")
 
 if __name__ == "__main__":
